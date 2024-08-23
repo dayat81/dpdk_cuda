@@ -1,3 +1,8 @@
+/*
+接收一个包并且打印出信息
+Author : Hox Zheng
+Date : 2017年 12月 31日 星期日 15:21:04 CST
+ */
 #include <stdint.h>
 
 #include <inttypes.h>
@@ -20,8 +25,6 @@
 
 #include <pthread.h>
 
-#include <string.h>
-
 #define RX_RING_SIZE 128
 
 #define TX_RING_SIZE 512
@@ -30,11 +33,16 @@
 
 #define MBUF_CACHE_SIZE 250
 
-#define BURST_SIZE 12
+#define BURST_SIZE 32
 
+// 这里用skleten 默认配置
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {.max_lro_pkt_size = RTE_ETHER_MAX_LEN}};
 
+/*
+ *这个是简单的端口初始化
+ *我在这里简单的端口0 初始化了一个 接收队列和一个发送队列
+ */
 static inline int
 port_init(struct rte_mempool *mbuf_pool)
 {
@@ -42,9 +50,7 @@ port_init(struct rte_mempool *mbuf_pool)
     const uint16_t rx_rings = 1, tx_rings = 1;
     int retval;
     uint16_t q;
-    uint32_t cnt_ports;
-    cnt_ports = rte_eth_dev_count_avail();
-    printf("Number of NICs: %i\n", cnt_ports);
+
     /*配置端口0,给他分配一个接收队列和一个发送队列*/
     retval = rte_eth_dev_configure(0, rx_rings, tx_rings, &port_conf);
     if (retval != 0)
@@ -76,6 +82,11 @@ port_init(struct rte_mempool *mbuf_pool)
     return 0;
 }
 
+/*
+我在main 函数里面 调用了输出化端口0的函数
+申请了 m_pool
+定义m_buf用来取接受队列中的包
+ */
 int main(int argc, char *argv[])
 {
     struct rte_mempool *mbuf_pool;
@@ -103,43 +114,48 @@ int main(int argc, char *argv[])
     if (port_init(mbuf_pool) != 0)
         rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu8 "\n",
                  0);
-    // 定义报文信息
-    struct Message
-    {
-        char data[10];
-    };
-    struct rte_ether_hdr *eth_hdr;
-    struct Message obj = {{'H', 'e', 'l', 'l', 'o', '2', '0', '1', '8'}};
-    struct Message *msg;
-    // 自己定义的包头
-    struct rte_ether_addr s_addr = {{0x14, 0x02, 0xEC, 0x89, 0x8D, 0x24}};
-    struct rte_ether_addr d_addr = {{0x14, 0x02, 0xEC, 0x89, 0xED, 0x54}};
-    uint16_t ether_type = 0x0a00;
+    // 定义m_buf，用来接受接受对列中的包
+    printf("初始话就绪，正在持续接受数据包.......\n");
 
-    // 对每个buf ， 给他们添加包
-
-    struct rte_mbuf *pkt[BURST_SIZE];
-    int i;
-    for (i = 0; i < BURST_SIZE; i++)
+    for (;;)
     {
-        pkt[i] = rte_pktmbuf_alloc(mbuf_pool);
-        eth_hdr = rte_pktmbuf_mtod(pkt[i], struct rte_ether_hdr *);
-        eth_hdr->dst_addr = d_addr;
-        eth_hdr->src_addr = s_addr;
-        eth_hdr->ether_type = ether_type;
-        msg = (struct Message *)(rte_pktmbuf_mtod(pkt[i], char *) + sizeof(struct rte_ether_hdr));
-        *msg = obj;
-        int pkt_size = sizeof(struct Message) + sizeof(struct rte_ether_hdr);
-        pkt[i]->data_len = pkt_size;
-        pkt[i]->pkt_len = pkt_size;
+
+        struct rte_mbuf *pkt[BURST_SIZE];
+        int i;
+        // 定义m_buf 并且分配内存
+        for (i = 0; i < BURST_SIZE; i++)
+        {
+            pkt[i] = rte_pktmbuf_alloc(mbuf_pool);
+        }
+
+        // 从接受队列中取出包
+        uint16_t nb_rx = rte_eth_rx_burst(0, 0, pkt, BURST_SIZE);
+        if (nb_rx == 0)
+        {
+            // 如果没有接受到就跳过
+            continue;
+        }
+        char *msg;
+        struct rte_ether_hdr *eth_hdr;
+        // 打印信息
+        for (i = 0; i < nb_rx; i++)
+        {
+            // eth_hdr = rte_pktmbuf_mtod(pkt[i], struct ether_hdr *);
+            //  打印接受到的包的地址信息
+            eth_hdr = rte_pktmbuf_mtod(pkt[i], struct rte_ether_hdr *);
+            printf("收到包 来自MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
+                   " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " : ",
+                   eth_hdr->src_addr.addr_bytes[0], eth_hdr->src_addr.addr_bytes[1],
+                   eth_hdr->src_addr.addr_bytes[2], eth_hdr->src_addr.addr_bytes[3],
+                   eth_hdr->src_addr.addr_bytes[4], eth_hdr->src_addr.addr_bytes[5]);
+            msg = ((rte_pktmbuf_mtod(pkt[i], char *)) + sizeof(struct rte_ether_hdr));
+            int j;
+            for (j = 0; j < 10; j++)
+                printf("%c", msg[j]);
+            printf("\n");
+            rte_pktmbuf_free(pkt[0]);
+        }
     }
-
-    uint16_t nb_tx = rte_eth_tx_burst(0, 0, pkt, BURST_SIZE);
-    printf("%d \n", nb_tx);
-    // 发送完成，答应发送了多少个
-
-    for (i = 0; i < BURST_SIZE; i++)
-        rte_pktmbuf_free(pkt[i]);
 
     return 0;
 }
