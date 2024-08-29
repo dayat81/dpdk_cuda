@@ -1,0 +1,5 @@
+src/test/hello
+src/test/dpdk/build/sendpack
+src/test/dpdk/l2fwd/build/l2fwd-shared
+src/test/dpdk/l2fwd/build/l2fwd
+src/test/dpdk/build/sendpack-shared
