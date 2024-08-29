@@ -3,3 +3,7 @@ src/test/dpdk/build/sendpack
 src/test/dpdk/l2fwd/build/l2fwd-shared
 src/test/dpdk/l2fwd/build/l2fwd
 src/test/dpdk/build/sendpack-shared
+src/test/dpdk/recv/build/recvpack-shared
+src/test/dpdk/recv/build/recvpack
+src/l2fwd/build/l2fwd
+src/l2fwd/build/l2fwd-shared

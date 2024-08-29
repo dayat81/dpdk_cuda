@@ -30,7 +30,7 @@
 
 #define MBUF_CACHE_SIZE 250
 
-#define BURST_SIZE 12
+#define BURST_SIZE 1
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {.max_lro_pkt_size = RTE_ETHER_MAX_LEN}};
