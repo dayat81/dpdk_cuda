@@ -1,0 +1,82 @@
+#ifndef __INCLUDE_OFFLOAD_CAPAS__
+#define __INCLUDE_OFFLOAD_CAPAS__
+
+
+#define RTE_RX_OFFLOAD_BIT2STR(_name)	\
+	{ RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT_##_name, #_name }
+
+const struct {
+    uint64_t offload;
+    const char *name;
+} eth_dev_rx_offload_names[] = {
+    { RTE_ETH_RX_OFFLOAD_VLAN_STRIP, "VLAN_STRIP" },
+    { RTE_ETH_RX_OFFLOAD_IPV4_CKSUM, "IPV4_CKSUM" },
+    { RTE_ETH_RX_OFFLOAD_UDP_CKSUM, "UDP_CKSUM" },
+    { RTE_ETH_RX_OFFLOAD_TCP_CKSUM, "TCP_CKSUM" },
+    { RTE_ETH_RX_OFFLOAD_TCP_LRO, "TCP_LRO" },
+    { RTE_ETH_RX_OFFLOAD_QINQ_STRIP, "QINQ_STRIP" },
+    { RTE_ETH_RX_OFFLOAD_OUTER_IPV4_CKSUM, "OUTER_IPV4_CKSUM" },
+    { RTE_ETH_RX_OFFLOAD_MACSEC_STRIP, "MACSEC_STRIP" },
+    { RTE_ETH_RX_OFFLOAD_VLAN_FILTER, "VLAN_FILTER" },
+    { RTE_ETH_RX_OFFLOAD_VLAN_EXTEND, "VLAN_EXTEND" },
+    { RTE_ETH_RX_OFFLOAD_SCATTER, "SCATTER" },
+    { RTE_ETH_RX_OFFLOAD_TIMESTAMP, "TIMESTAMP" },
+    { RTE_ETH_RX_OFFLOAD_SECURITY, "SECURITY" },
+    { RTE_ETH_RX_OFFLOAD_KEEP_CRC, "KEEP_CRC" },
+    { RTE_ETH_RX_OFFLOAD_SCTP_CKSUM, "SCTP_CKSUM" },
+    { RTE_ETH_RX_OFFLOAD_OUTER_UDP_CKSUM, "OUTER_UDP_CKSUM" },
+    { RTE_ETH_RX_OFFLOAD_RSS_HASH, "RSS_HASH" },
+    { RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT, "BUFFER_SPLIT" },
+};
+
+#undef RTE_RX_OFFLOAD_BIT2STR
+#undef RTE_ETH_RX_OFFLOAD_BIT2STR
+
+#define RTE_TX_OFFLOAD_BIT2STR(_name)	\
+	{ RTE_ETH_TX_OFFLOAD_##_name, #_name }
+
+const struct {
+    uint64_t offload;
+    const char *name;
+} eth_dev_tx_offload_names[] = {
+    RTE_TX_OFFLOAD_BIT2STR(VLAN_INSERT),
+    RTE_TX_OFFLOAD_BIT2STR(IPV4_CKSUM),
+    RTE_TX_OFFLOAD_BIT2STR(UDP_CKSUM),
+    RTE_TX_OFFLOAD_BIT2STR(TCP_CKSUM),
+    RTE_TX_OFFLOAD_BIT2STR(SCTP_CKSUM),
+    RTE_TX_OFFLOAD_BIT2STR(TCP_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(UDP_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(OUTER_IPV4_CKSUM),
+    RTE_TX_OFFLOAD_BIT2STR(QINQ_INSERT),
+    RTE_TX_OFFLOAD_BIT2STR(VXLAN_TNL_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(GRE_TNL_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(IPIP_TNL_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(GENEVE_TNL_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(MACSEC_INSERT),
+    RTE_TX_OFFLOAD_BIT2STR(MT_LOCKFREE),
+    RTE_TX_OFFLOAD_BIT2STR(MULTI_SEGS),
+    RTE_TX_OFFLOAD_BIT2STR(MBUF_FAST_FREE),
+    RTE_TX_OFFLOAD_BIT2STR(SECURITY),
+    RTE_TX_OFFLOAD_BIT2STR(UDP_TNL_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(IP_TNL_TSO),
+    RTE_TX_OFFLOAD_BIT2STR(OUTER_UDP_CKSUM),
+    RTE_TX_OFFLOAD_BIT2STR(SEND_ON_TIMESTAMP),
+};
+
+#undef RTE_TX_OFFLOAD_BIT2STR
+
+
+inline void print_rx_offload_capas(const uint64_t offload) {
+    for(size_t i=0; i<18; ++i) {
+        if(offload&eth_dev_rx_offload_names[i].offload)
+            printf("%s\n", eth_dev_rx_offload_names[i].name);
+    }
+}
+
+inline void print_tx_offload_capas(const uint64_t offload) {
+    for(size_t i=0; i<21; ++i) {
+        if(offload&eth_dev_tx_offload_names[i].offload)
+            printf("%s\n", eth_dev_tx_offload_names[i].name);
+    }
+}
+#endif

@@ -8,8 +8,12 @@
 #include <rte_ether.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
+#include <rte_icmp.h>
+#include <rte_thread.h>
+#include <arpa/inet.h>
+#include <stdbool.h>
 #include <pthread.h>
-#include <string.h>
+#include <rte_log.h>
 
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 512
@@ -20,6 +24,8 @@
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {.max_lro_pkt_size = RTE_ETHER_MAX_LEN}
 };
+
+static volatile bool force_quit = false;
 
 static inline int
 port_init(uint16_t port, struct rte_mempool *mbuf_pool)
@@ -57,6 +63,56 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     return 0;
 }
 
+// Function to handle ICMP packets on a specific port
+static void* handle_icmp_packets(void *arg)
+{
+    unsigned port = *(unsigned *)arg;
+    struct rte_mbuf *rx_pkts[BURST_SIZE];
+    uint16_t nb_rx, nb_tx;
+    struct rte_ether_hdr *eth_hdr;
+
+    while (!force_quit) {
+        nb_rx = rte_eth_rx_burst(port, 0, rx_pkts, BURST_SIZE);
+        if (nb_rx > 0) {
+            for (int i = 0; i < nb_rx; i++) {
+                eth_hdr = rte_pktmbuf_mtod(rx_pkts[i], struct rte_ether_hdr *);
+                
+                if (rte_be_to_cpu_16(eth_hdr->ether_type) == RTE_ETHER_TYPE_IPV4) {
+                    struct rte_ipv4_hdr *ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
+                    
+                    if (ip_hdr->next_proto_id == IPPROTO_ICMP) {
+                        char src_ip[INET_ADDRSTRLEN];
+                        char dst_ip[INET_ADDRSTRLEN];
+                        
+                        inet_ntop(AF_INET, &(ip_hdr->src_addr), src_ip, INET_ADDRSTRLEN);
+                        inet_ntop(AF_INET, &(ip_hdr->dst_addr), dst_ip, INET_ADDRSTRLEN);
+                        
+                        RTE_LOG(INFO, USER1, "Received ICMP packet on port %u from IP: %s to IP: %s\n", port, src_ip, dst_ip);
+                        
+                        struct rte_icmp_hdr *icmp_hdr = (struct rte_icmp_hdr *)(ip_hdr + 1);
+                        RTE_LOG(INFO, USER1, "ICMP Type: %d, Code: %d\n", icmp_hdr->icmp_type, icmp_hdr->icmp_code);
+
+                        // Forward the ICMP packet to the other port
+                        unsigned other_port = (port == 0) ? 1 : 0;
+                        nb_tx = rte_eth_tx_burst(other_port, 0, &rx_pkts[i], 1);
+                        if (nb_tx == 1) {
+                            RTE_LOG(INFO, USER1, "Forwarded ICMP packet from port %u to port %u\n", port, other_port);
+                        } else {
+                            RTE_LOG(WARNING, USER1, "Failed to forward ICMP packet from port %u to port %u\n", port, other_port);
+                            rte_pktmbuf_free(rx_pkts[i]);
+                        }
+                    } else {
+                        rte_pktmbuf_free(rx_pkts[i]);
+                    }
+                } else {
+                    rte_pktmbuf_free(rx_pkts[i]);
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -85,71 +141,25 @@ main(int argc, char *argv[])
             rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu16 "\n", portid);
     }
 
-    printf("Initialized 3 ports\n");
-    printf("Starting packet forwarding...\n");
-
-    struct rte_mbuf *rx_pkts[BURST_SIZE];
-    struct rte_mbuf *tx_pkts[BURST_SIZE];
-    uint16_t nb_rx, nb_tx;
-
-    // Define message structure
-    struct Message {
-        char data[10];
-    };
-
-    // Define Ethernet header and addresses
-    struct rte_ether_hdr *eth_hdr;
-    struct rte_ether_addr s_addr = {{0x14, 0x02, 0xEC, 0x89, 0x8D, 0x24}};
-    struct rte_ether_addr d_addr = {{0x14, 0x02, 0xEC, 0x89, 0xED, 0x54}};
-    uint16_t ether_type = 0x0a00;
+    RTE_LOG(INFO, USER1, "Initialized 2 ports\n");
+    RTE_LOG(INFO, USER1, "Starting packet forwarding...\n");
 
     // Main loop
-    for (;;) {
-        // Receive packets on port 0
-        nb_rx = rte_eth_rx_burst(0, 0, rx_pkts, BURST_SIZE);
-        if (nb_rx > 0) {
-            //printf("Received %d packets on port 0\n", nb_rx);
-            
-            // Process received packets
-            for (int i = 0; i < nb_rx; i++) {
-                eth_hdr = rte_pktmbuf_mtod(rx_pkts[i], struct rte_ether_hdr *);
-                
-                // Check if it's an IPv4 packet
-                if (rte_be_to_cpu_16(eth_hdr->ether_type) == RTE_ETHER_TYPE_IPV4) {
-                    struct rte_ipv4_hdr *ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
-                    
-                    // Check if it's an ICMP packet
-                    if (ip_hdr->next_proto_id == IPPROTO_ICMP) {
-                        char src_ip[INET_ADDRSTRLEN];
-                        char dst_ip[INET_ADDRSTRLEN];
-                        
-                        inet_ntop(AF_INET, &(ip_hdr->src_addr), src_ip, INET_ADDRSTRLEN);
-                        inet_ntop(AF_INET, &(ip_hdr->dst_addr), dst_ip, INET_ADDRSTRLEN);
-                        
-                        printf("Received ICMP packet from IP: %s to IP: %s\n", src_ip, dst_ip);
-                        
-                        struct rte_icmp_hdr *icmp_hdr = (struct rte_icmp_hdr *)(ip_hdr + 1);
-                        printf("ICMP Type: %d, Code: %d\n", icmp_hdr->icmp_type, icmp_hdr->icmp_code);
+    unsigned port_0 = 0;
+    unsigned port_1 = 1;
+    pthread_t thread_port_0, thread_port_1;
 
-                        // Forward the ICMP packet to port 1
-                        nb_tx = rte_eth_tx_burst(1, 0, &rx_pkts[i], 1);
-                        if (nb_tx == 1) {
-                            printf("Forwarded ICMP packet to port 1\n");
-                        } else {
-                            printf("Failed to forward ICMP packet to port 1\n");
-                            rte_pktmbuf_free(rx_pkts[i]);
-                        }
-                    } else {
-                        // Free non-ICMP packets
-                        rte_pktmbuf_free(rx_pkts[i]);
-                    }
-                } else {
-                    // Free non-IPv4 packets
-                    rte_pktmbuf_free(rx_pkts[i]);
-                }
-            }
-        }
+    // Create threads for handling ICMP packets on each port
+    if (pthread_create(&thread_port_0, NULL, handle_icmp_packets, &port_0) != 0) {
+        rte_exit(EXIT_FAILURE, "Error creating thread for port 0\n");
     }
+    if (pthread_create(&thread_port_1, NULL, handle_icmp_packets, &port_1) != 0) {
+        rte_exit(EXIT_FAILURE, "Error creating thread for port 1\n");
+    }
+
+    // Wait for threads to complete (this will run indefinitely unless force_quit is set)
+    pthread_join(thread_port_0, NULL);
+    pthread_join(thread_port_1, NULL);
 
     return 0;
 }
