@@ -77,27 +77,27 @@ static void* handle_ethernet_packets(void *arg)
             for (int i = 0; i < nb_rx; i++) {
                 eth_hdr = rte_pktmbuf_mtod(rx_pkts[i], struct rte_ether_hdr *);
                 
-                char src_mac[18];
-                char dst_mac[18];
+                // char src_mac[18];
+                // char dst_mac[18];
                 
-                snprintf(src_mac, sizeof(src_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
-                         eth_hdr->src_addr.addr_bytes[0], eth_hdr->src_addr.addr_bytes[1],
-                         eth_hdr->src_addr.addr_bytes[2], eth_hdr->src_addr.addr_bytes[3],
-                         eth_hdr->src_addr.addr_bytes[4], eth_hdr->src_addr.addr_bytes[5]);
+                // snprintf(src_mac, sizeof(src_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                //          eth_hdr->src_addr.addr_bytes[0], eth_hdr->src_addr.addr_bytes[1],
+                //          eth_hdr->src_addr.addr_bytes[2], eth_hdr->src_addr.addr_bytes[3],
+                //          eth_hdr->src_addr.addr_bytes[4], eth_hdr->src_addr.addr_bytes[5]);
                 
-                snprintf(dst_mac, sizeof(dst_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
-                         eth_hdr->dst_addr.addr_bytes[0], eth_hdr->dst_addr.addr_bytes[1],
-                         eth_hdr->dst_addr.addr_bytes[2], eth_hdr->dst_addr.addr_bytes[3],
-                         eth_hdr->dst_addr.addr_bytes[4], eth_hdr->dst_addr.addr_bytes[5]);
+                // snprintf(dst_mac, sizeof(dst_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                //          eth_hdr->dst_addr.addr_bytes[0], eth_hdr->dst_addr.addr_bytes[1],
+                //          eth_hdr->dst_addr.addr_bytes[2], eth_hdr->dst_addr.addr_bytes[3],
+                //          eth_hdr->dst_addr.addr_bytes[4], eth_hdr->dst_addr.addr_bytes[5]);
                 
-                RTE_LOG(INFO, USER1, "Received Ethernet packet on port %u from MAC: %s to MAC: %s\n", port, src_mac, dst_mac);
+                // RTE_LOG(INFO, USER1, "Received Ethernet packet on port %u from MAC: %s to MAC: %s\n", port, src_mac, dst_mac);
 
                 // Forward the Ethernet packet to the other port
                 unsigned other_port = (port == 0) ? 1 : 0;
                 nb_tx = rte_eth_tx_burst(other_port, 0, &rx_pkts[i], 1);
-                if (nb_tx == 1) {
-                    RTE_LOG(INFO, USER1, "Forwarded Ethernet packet from port %u to port %u\n", port, other_port);
-                } else {
+                if (nb_tx != 1) {
+                //     RTE_LOG(INFO, USER1, "Forwarded Ethernet packet from port %u to port %u\n", port, other_port);
+                // } else {
                     RTE_LOG(WARNING, USER1, "Failed to forward Ethernet packet from port %u to port %u\n", port, other_port);
                     rte_pktmbuf_free(rx_pkts[i]);
                 }
