@@ -63,8 +63,8 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     return 0;
 }
 
-// Function to handle ICMP packets on a specific port
-static void* handle_icmp_packets(void *arg)
+// Function to handle Ethernet packets on a specific port
+static void* handle_ethernet_packets(void *arg)
 {
     unsigned port = *(unsigned *)arg;
     struct rte_mbuf *rx_pkts[BURST_SIZE];
@@ -77,34 +77,28 @@ static void* handle_icmp_packets(void *arg)
             for (int i = 0; i < nb_rx; i++) {
                 eth_hdr = rte_pktmbuf_mtod(rx_pkts[i], struct rte_ether_hdr *);
                 
-                if (rte_be_to_cpu_16(eth_hdr->ether_type) == RTE_ETHER_TYPE_IPV4) {
-                    struct rte_ipv4_hdr *ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
-                    
-                    if (ip_hdr->next_proto_id == IPPROTO_ICMP) {
-                        char src_ip[INET_ADDRSTRLEN];
-                        char dst_ip[INET_ADDRSTRLEN];
-                        
-                        inet_ntop(AF_INET, &(ip_hdr->src_addr), src_ip, INET_ADDRSTRLEN);
-                        inet_ntop(AF_INET, &(ip_hdr->dst_addr), dst_ip, INET_ADDRSTRLEN);
-                        
-                        RTE_LOG(INFO, USER1, "Received ICMP packet on port %u from IP: %s to IP: %s\n", port, src_ip, dst_ip);
-                        
-                        struct rte_icmp_hdr *icmp_hdr = (struct rte_icmp_hdr *)(ip_hdr + 1);
-                        RTE_LOG(INFO, USER1, "ICMP Type: %d, Code: %d\n", icmp_hdr->icmp_type, icmp_hdr->icmp_code);
+                char src_mac[18];
+                char dst_mac[18];
+                
+                snprintf(src_mac, sizeof(src_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                         eth_hdr->src_addr.addr_bytes[0], eth_hdr->src_addr.addr_bytes[1],
+                         eth_hdr->src_addr.addr_bytes[2], eth_hdr->src_addr.addr_bytes[3],
+                         eth_hdr->src_addr.addr_bytes[4], eth_hdr->src_addr.addr_bytes[5]);
+                
+                snprintf(dst_mac, sizeof(dst_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                         eth_hdr->dst_addr.addr_bytes[0], eth_hdr->dst_addr.addr_bytes[1],
+                         eth_hdr->dst_addr.addr_bytes[2], eth_hdr->dst_addr.addr_bytes[3],
+                         eth_hdr->dst_addr.addr_bytes[4], eth_hdr->dst_addr.addr_bytes[5]);
+                
+                RTE_LOG(INFO, USER1, "Received Ethernet packet on port %u from MAC: %s to MAC: %s\n", port, src_mac, dst_mac);
 
-                        // Forward the ICMP packet to the other port
-                        unsigned other_port = (port == 0) ? 1 : 0;
-                        nb_tx = rte_eth_tx_burst(other_port, 0, &rx_pkts[i], 1);
-                        if (nb_tx == 1) {
-                            RTE_LOG(INFO, USER1, "Forwarded ICMP packet from port %u to port %u\n", port, other_port);
-                        } else {
-                            RTE_LOG(WARNING, USER1, "Failed to forward ICMP packet from port %u to port %u\n", port, other_port);
-                            rte_pktmbuf_free(rx_pkts[i]);
-                        }
-                    } else {
-                        rte_pktmbuf_free(rx_pkts[i]);
-                    }
+                // Forward the Ethernet packet to the other port
+                unsigned other_port = (port == 0) ? 1 : 0;
+                nb_tx = rte_eth_tx_burst(other_port, 0, &rx_pkts[i], 1);
+                if (nb_tx == 1) {
+                    RTE_LOG(INFO, USER1, "Forwarded Ethernet packet from port %u to port %u\n", port, other_port);
                 } else {
+                    RTE_LOG(WARNING, USER1, "Failed to forward Ethernet packet from port %u to port %u\n", port, other_port);
                     rte_pktmbuf_free(rx_pkts[i]);
                 }
             }
@@ -133,6 +127,7 @@ main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
     uint16_t nb_ports = rte_eth_dev_count_avail();
+    printf("Number of ports: %u\n", nb_ports);
     if (nb_ports < 2)
         rte_exit(EXIT_FAILURE, "Error: number of ports must be at least 2\n");
 
@@ -149,11 +144,11 @@ main(int argc, char *argv[])
     unsigned port_1 = 1;
     pthread_t thread_port_0, thread_port_1;
 
-    // Create threads for handling ICMP packets on each port
-    if (pthread_create(&thread_port_0, NULL, handle_icmp_packets, &port_0) != 0) {
+    // Create threads for handling Ethernet packets on each port
+    if (pthread_create(&thread_port_0, NULL, handle_ethernet_packets, &port_0) != 0) {
         rte_exit(EXIT_FAILURE, "Error creating thread for port 0\n");
     }
-    if (pthread_create(&thread_port_1, NULL, handle_icmp_packets, &port_1) != 0) {
+    if (pthread_create(&thread_port_1, NULL, handle_ethernet_packets, &port_1) != 0) {
         rte_exit(EXIT_FAILURE, "Error creating thread for port 1\n");
     }
 
