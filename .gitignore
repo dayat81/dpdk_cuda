@@ -9,3 +9,4 @@ src/l2fwd/build/l2fwd
 src/l2fwd/build/l2fwd-shared
 src/build/l2fwd-shared
 src/build/l2fwd
+src/dns_mappings.log
