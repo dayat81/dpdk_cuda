@@ -5,9 +5,20 @@
 APP = l2fwd
 
 # all source are stored in SRCS-y
-SRCS-y := main.c dns_parser.c
+SRCS-y := main.c dns_parser.c rocksdb_handler.c
+
+# Add RocksDB flags
+CFLAGS += $(shell $(PKGCONF) --cflags rocksdb)
+LDFLAGS_SHARED += $(shell $(PKGCONF) --libs rocksdb)
+LDFLAGS_STATIC += $(shell $(PKGCONF) --static --libs rocksdb)
+LDFLAGS += -lrocksdb
 
 PKGCONF ?= pkg-config
+
+# Add RocksDB existence check
+ifneq ($(shell $(PKGCONF) --exists rocksdb && echo 0),0)
+$(error "no installation of RocksDB found")
+endif
 
 # Build using pkg-config variables if possible
 ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)

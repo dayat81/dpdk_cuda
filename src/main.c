@@ -45,6 +45,7 @@
 #include <time.h>
 
 #include "dns_parser.h"
+#include "rocksdb_handler.h"
 
 static volatile bool force_quit;
 
@@ -196,6 +197,29 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 
     if (mac_updating)
         l2fwd_mac_updating(m, dst_port);
+
+    // Extract IP addresses and update traffic bytes
+    struct rte_ether_hdr *eth_hdr;
+    struct rte_ipv4_hdr *ip_hdr;
+    uint16_t ether_type;
+
+    eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+    ether_type = rte_be_to_cpu_16(eth_hdr->ether_type);
+
+    if (ether_type == RTE_ETHER_TYPE_IPV4) {
+        ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
+        
+        char src_ip[INET_ADDRSTRLEN];
+        char dst_ip[INET_ADDRSTRLEN];
+        
+        inet_ntop(AF_INET, &(ip_hdr->src_addr), src_ip, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &(ip_hdr->dst_addr), dst_ip, INET_ADDRSTRLEN);
+        
+        uint32_t pkt_len = rte_be_to_cpu_16(ip_hdr->total_length);
+        
+        update_ip_traffic(src_ip, pkt_len);
+        update_ip_traffic(dst_ip, pkt_len);
+    }
 
     // Call the DNS parsing function
     parse_dns_packet(m);
@@ -677,6 +701,11 @@ main(int argc, char **argv)
 	argc -= ret;
 	argv += ret;
 
+	// Initialize RocksDB
+	if (init_rocksdb("/tmp/rocksdb_dns_counter") != 0) {
+		return 1;
+	}
+
 	force_quit = false;
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
@@ -942,6 +971,9 @@ main(int argc, char **argv)
 	/* clean up the EAL */
 	rte_eal_cleanup();
 	printf("Bye...\n");
+
+	// Before exiting, close RocksDB
+	close_rocksdb();
 
 	return ret;
 }
