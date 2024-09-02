@@ -729,8 +729,8 @@ void *handle_socket_communication(void *arg) {
             continue;
         }
 
-        int valread = read(new_socket, buffer, BUFFER_SIZE);
-        printf("Received command: %s\n", buffer);
+        //int valread = read(new_socket, buffer, BUFFER_SIZE);
+        //printf("Received command: %s\n", buffer);
 
         // Process the command using the new command handler
         int count;

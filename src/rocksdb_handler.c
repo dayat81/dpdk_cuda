@@ -2,12 +2,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h> // Add this include for inet_pton
 
 static rocksdb_t *db;
 static rocksdb_options_t *options;
 static rocksdb_writeoptions_t *writeoptions;
 static rocksdb_readoptions_t *readoptions;
 
+// Function to validate IP address format
+int is_valid_ip(const char *ip_addr) {
+    struct sockaddr_in sa;
+    return inet_pton(AF_INET, ip_addr, &(sa.sin_addr)) != 0;
+}
 
 int init_rocksdb(const char *db_path) {
     options = rocksdb_options_create();
@@ -52,6 +58,11 @@ void close_rocksdb(void) {
 }
 
 void update_ip_traffic(const char *ip_addr, uint32_t bytes) {
+    if (!is_valid_ip(ip_addr)) {
+        fprintf(stderr, "Invalid IP address format: %s\n", ip_addr);
+        return;
+    }
+
     char key[16];
     char value[32];
     char *err = NULL;
@@ -80,6 +91,8 @@ void update_ip_traffic(const char *ip_addr, uint32_t bytes) {
         free(err);
     }
 }
+
+
 
 TrafficData* read_all_traffic_data(int* count) {
     rocksdb_iterator_t* iter = rocksdb_create_iterator(db, readoptions);
@@ -113,8 +126,13 @@ TrafficData* read_all_traffic_data(int* count) {
             data = temp;
         }
 
-        strncpy(data[*count].ip_addr, key, sizeof(data[*count].ip_addr) - 1);
-        data[*count].ip_addr[sizeof(data[*count].ip_addr) - 1] = '\0';
+        // Ensure the key is null-terminated
+        if (key_len >= sizeof(data[*count].ip_addr)) {
+            key_len = sizeof(data[*count].ip_addr) - 1;
+        }
+        strncpy(data[*count].ip_addr, key, key_len);
+        data[*count].ip_addr[key_len] = '\0'; // Null-terminate the string
+
         data[*count].bytes = strtoull(value, NULL, 10);
 
         (*count)++;
