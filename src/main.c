@@ -51,7 +51,6 @@
 
 #include "dns_parser.h"
 #include "rocksdb_handler.h"
-#include "command_handler.h"
 
 static volatile bool force_quit;
 
@@ -222,7 +221,8 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
         inet_ntop(AF_INET, &(ip_hdr->dst_addr), dst_ip, INET_ADDRSTRLEN);
         
         uint32_t pkt_len = rte_be_to_cpu_16(ip_hdr->total_length);
-        
+        // Log IP addresses and packet length
+        //RTE_LOG(INFO, L2FWD, "Packet: src_ip=%s, dst_ip=%s, length=%u\n", src_ip, dst_ip, pkt_len);
         update_ip_traffic(src_ip, pkt_len);
         update_ip_traffic(dst_ip, pkt_len);
     }
@@ -733,9 +733,39 @@ void *handle_socket_communication(void *arg) {
         printf("Received command: %s\n", buffer);
 
         // Process the command using the new command handler
-        handle_command(buffer, response, BUFFER_SIZE);
-
-        send(new_socket, response, strlen(response), 0);
+        int count;
+        TrafficData* data = read_all_traffic_data(&count);
+        
+        if (data == NULL) {
+            snprintf(response, BUFFER_SIZE, "Error reading traffic data");
+            send(new_socket, response, strlen(response), 0);
+        } else {
+            int offset = 0;
+            while (offset < count) {
+                int remaining = count - offset;
+                int to_send = (remaining > BUFFER_SIZE / 50) ? BUFFER_SIZE / 50 : remaining;
+                
+                int written = 0;
+                // for (int i = 0; i < to_send && written < BUFFER_SIZE; i++) {
+                //     RTE_LOG(INFO, L2FWD, "IP: %s, Bytes: %lu\n", 
+                //             data[offset + i].ip_addr, data[offset + i].bytes);
+                // }
+                for (int i = 0; i < to_send && written < BUFFER_SIZE; i++) {
+                    written += snprintf(response + written, BUFFER_SIZE - written, 
+                                        "%s: %lu bytes\n", data[offset + i].ip_addr, data[offset + i].bytes);
+                }
+                
+                int bytes_sent = send(new_socket, response, written, 0);
+                if (bytes_sent < 0) {
+                    perror("send");
+                    break;
+                }
+                
+                offset += to_send;
+            }
+            
+            free(data);
+        }
         close(new_socket);
     }
 
@@ -1022,8 +1052,8 @@ main(int argc, char **argv)
 		}
 	}
 
-	// Wait for the socket thread to finish
-	pthread_join(socket_thread, NULL);
+	// Kill the socket thread
+	pthread_cancel(socket_thread);
 
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
