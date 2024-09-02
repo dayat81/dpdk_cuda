@@ -16,6 +16,11 @@
 #include <getopt.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <pthread.h>
 
 #include <rte_common.h>
 #include <rte_log.h>
@@ -46,6 +51,7 @@
 
 #include "dns_parser.h"
 #include "rocksdb_handler.h"
+#include "command_handler.h"
 
 static volatile bool force_quit;
 
@@ -64,10 +70,10 @@ static int promiscuous_on;
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RX_DESC_DEFAULT 1024
-#define TX_DESC_DEFAULT 1024
-static uint16_t nb_rxd = RX_DESC_DEFAULT;
-static uint16_t nb_txd = TX_DESC_DEFAULT;
+#define RTE_RX_DESC_DEFAULT 1024
+#define RTE_TX_DESC_DEFAULT 1024
+static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
+static uint16_t nb_txd = RTE_TX_DESC_DEFAULT;
 
 /* ethernet addresses of ports */
 static struct rte_ether_addr l2fwd_ports_eth_addr[RTE_MAX_ETHPORTS];
@@ -681,6 +687,62 @@ signal_handler(int signum)
 	}
 }
 
+#define PORT 8080
+#define BUFFER_SIZE 1024
+
+void *handle_socket_communication(void *arg) {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    char buffer[BUFFER_SIZE] = {0};
+    char response[BUFFER_SIZE] = {0};
+
+    // Creating socket file descriptor
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Forcefully attaching socket to the port 8080
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    // Forcefully attaching socket to the port 8080
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+    if (listen(server_fd, 3) < 0) {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+
+    while (!force_quit) {
+        if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+            perror("accept");
+            continue;
+        }
+
+        int valread = read(new_socket, buffer, BUFFER_SIZE);
+        printf("Received command: %s\n", buffer);
+
+        // Process the command using the new command handler
+        handle_command(buffer, response, BUFFER_SIZE);
+
+        send(new_socket, response, strlen(response), 0);
+        close(new_socket);
+    }
+
+    close(server_fd);
+    return NULL;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -945,6 +1007,12 @@ main(int argc, char **argv)
 	open_dns_log_file();
 
 	ret = 0;
+
+	pthread_t socket_thread;
+	if (pthread_create(&socket_thread, NULL, handle_socket_communication, NULL) != 0) {
+		rte_exit(EXIT_FAILURE, "Failed to create socket thread\n");
+	}
+
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, NULL, CALL_MAIN);
 	RTE_LCORE_FOREACH_WORKER(lcore_id) {
@@ -953,6 +1021,9 @@ main(int argc, char **argv)
 			break;
 		}
 	}
+
+	// Wait for the socket thread to finish
+	pthread_join(socket_thread, NULL);
 
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
